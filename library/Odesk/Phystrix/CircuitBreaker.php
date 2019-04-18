@@ -47,6 +47,11 @@ class CircuitBreaker implements CircuitBreakerInterface
     private $stateStorage;
 
     /**
+     * @var ExecutionEvents
+     */
+    private $executionEvents;
+    
+    /**
      * String identifier of the group of commands this circuit breaker is responsible for
      *
      * @var string
@@ -65,12 +70,14 @@ class CircuitBreaker implements CircuitBreakerInterface
         $commandKey,
         CommandMetrics $metrics,
         Config $commandConfig,
-        StateStorageInterface $stateStorage
+        StateStorageInterface $stateStorage,
+        ExecutionEvents $executionEvents
     ) {
         $this->commandKey = $commandKey;
         $this->metrics = $metrics;
         $this->config = $commandConfig;
         $this->stateStorage = $stateStorage;
+        $this->executionEvents = $executionEvents;
     }
 
     /**
@@ -97,6 +104,7 @@ class CircuitBreaker implements CircuitBreakerInterface
         if ($healthCounts->getErrorPercentage() < $allowedErrorPercentage) {
             return false;
         } else {
+            $this->executionEvents->recordExecutionEvent(ExecutionEvents::EVENT_CIRCUIT_OPEN);
             $this->stateStorage->openCircuit(
                 $this->commandKey,
                 $this->config->get('circuitBreaker')->get('sleepWindowInMilliseconds')
@@ -144,6 +152,7 @@ class CircuitBreaker implements CircuitBreakerInterface
     public function markSuccess()
     {
         if ($this->stateStorage->isCircuitOpen($this->commandKey)) {
+            $this->executionEvents->recordExecutionEvent(ExecutionEvents::EVENT_CIRCUIT_CLOSED);
             $this->stateStorage->closeCircuit($this->commandKey);
             // may cause some stats to be removed from reporting, see http://goo.gl/dtHN34
             $this->metrics->resetCounter();

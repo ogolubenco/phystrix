@@ -53,13 +53,13 @@ class CircuitBreakerFactory
      * @param CommandMetrics $metrics
      * @return CircuitBreakerInterface
      */
-    public function get($commandKey, Config $commandConfig, CommandMetrics $metrics)
+    public function get($commandKey, Config $commandConfig, CommandMetrics $metrics, ExecutionEvents $executionEvents)
     {
         if (!isset($this->circuitBreakersByCommand[$commandKey])) {
             $circuitBreakerConfig = $commandConfig->get('circuitBreaker');
             if ($circuitBreakerConfig->get('enabled')) {
                 $this->circuitBreakersByCommand[$commandKey] =
-                    new CircuitBreaker($commandKey, $metrics, $commandConfig, $this->stateStorage);
+                    new CircuitBreaker($commandKey, $metrics, $commandConfig, $this->stateStorage, $executionEvents);
             } else {
                 $this->circuitBreakersByCommand[$commandKey] = new NoOpCircuitBreaker();
             }

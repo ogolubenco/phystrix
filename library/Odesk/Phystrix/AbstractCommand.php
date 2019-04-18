@@ -30,15 +30,6 @@ use Exception;
  */
 abstract class AbstractCommand
 {
-    const EVENT_SUCCESS = 'SUCCESS';
-    const EVENT_FAILURE = 'FAILURE';
-    const EVENT_TIMEOUT = 'TIMEOUT';
-    const EVENT_SHORT_CIRCUITED = 'SHORT_CIRCUITED';
-    const EVENT_FALLBACK_SUCCESS = 'FALLBACK_SUCCESS';
-    const EVENT_FALLBACK_FAILURE = 'FALLBACK_FAILURE';
-    const EVENT_EXCEPTION_THROWN = 'EXCEPTION_THROWN';
-    const EVENT_RESPONSE_FROM_CACHE = 'RESPONSE_FROM_CACHE';
-
     /**
      * Command Key, used for grouping Circuit Breakers
      *
@@ -81,9 +72,9 @@ abstract class AbstractCommand
     /**
      * Events logged during execution
      *
-     * @var array
+     * @var ExecutionEvents
      */
-    private $executionEvents = array();
+    private $executionEvents;
 
     /**
      * Execution time in milliseconds
@@ -162,6 +153,16 @@ abstract class AbstractCommand
     }
 
     /**
+     * Sets execution events object
+     *
+     * @param ExecutionEvents $requestLog
+     */
+    public function setExecutionEvents(ExecutionEvents $executionEvents)
+    {
+        $this->executionEvents = $executionEvents;
+    }
+    
+    /**
      * Sets base command configuration from the global phystrix configuration
      *
      * @param Config $phystrixConfig
@@ -227,14 +228,14 @@ abstract class AbstractCommand
             $cacheHit = $this->requestCache->exists($this->getCommandKey(), $this->getCacheKey());
             if ($cacheHit) {
                 $metrics->markResponseFromCache();
-                $this->recordExecutionEvent(self::EVENT_RESPONSE_FROM_CACHE);
+                $this->recordExecutionEvent(ExecutionEvents::EVENT_RESPONSE_FROM_CACHE);
                 return $this->requestCache->get($this->getCommandKey(), $this->getCacheKey());
             }
         }
         $circuitBreaker = $this->getCircuitBreaker();
         if (!$circuitBreaker->allowRequest()) {
             $metrics->markShortCircuited();
-            $this->recordExecutionEvent(self::EVENT_SHORT_CIRCUITED);
+            $this->recordExecutionEvent(ExecutionEvents::EVENT_SHORT_CIRCUITED);
             return $this->getFallbackOrThrowException();
         }
         $this->invocationStartTime = $this->getTimeInMilliseconds();
@@ -243,7 +244,7 @@ abstract class AbstractCommand
             $this->recordExecutionTime();
             $metrics->markSuccess();
             $circuitBreaker->markSuccess();
-            $this->recordExecutionEvent(self::EVENT_SUCCESS);
+            $this->recordExecutionEvent(ExecutionEvents::EVENT_SUCCESS);
         } catch (BadRequestException $exception) {
             // Treated differently and allowed to propagate without any stats tracking or fallback logic
             $this->recordExecutionTime();
@@ -252,7 +253,7 @@ abstract class AbstractCommand
             $this->recordExecutionTime();
             $metrics->markFailure();
             $this->executionException = $exception;
-            $this->recordExecutionEvent(self::EVENT_FAILURE);
+            $this->recordExecutionEvent(ExecutionEvents::EVENT_FAILURE);
             $result = $this->getFallbackOrThrowException($exception);
         }
 
@@ -298,7 +299,6 @@ abstract class AbstractCommand
         $this->serviceLocator = $serviceLocator;
     }
 
-
     /**
      * Logic to record events and exceptions as they take place
      *
@@ -306,8 +306,7 @@ abstract class AbstractCommand
      */
     private function recordExecutionEvent($eventName)
     {
-        $this->executionEvents[] = $eventName;
-
+        $this->executionEvents->recordExecutionEvent($eventName);
         $this->processExecutionEvent($eventName);
     }
 
@@ -316,7 +315,7 @@ abstract class AbstractCommand
      *
      * @return CommandMetrics
      */
-    private function getMetrics()
+    protected function getMetrics()
     {
         return $this->commandMetricsFactory->get($this->getCommandKey(), $this->config);
     }
@@ -328,7 +327,12 @@ abstract class AbstractCommand
      */
     private function getCircuitBreaker()
     {
-        return $this->circuitBreakerFactory->get($this->getCommandKey(), $this->config, $this->getMetrics());
+        return $this->circuitBreakerFactory->get(
+            $this->getCommandKey(), 
+            $this->config, 
+            $this->getMetrics(),
+            $this->executionEvents
+        );
     }
 
     /**
@@ -348,7 +352,7 @@ abstract class AbstractCommand
                 try {
                     $executionResult = $this->getFallback();
                     $metrics->markFallbackSuccess();
-                    $this->recordExecutionEvent(self::EVENT_FALLBACK_SUCCESS);
+                    $this->recordExecutionEvent(ExecutionEvents::EVENT_FALLBACK_SUCCESS);
                     return $executionResult;
                 } catch (FallbackNotAvailableException $fallbackException) {
                     throw new RuntimeException(
@@ -358,7 +362,7 @@ abstract class AbstractCommand
                     );
                 } catch (Exception $fallbackException) {
                     $metrics->markFallbackFailure();
-                    $this->recordExecutionEvent(self::EVENT_FALLBACK_FAILURE);
+                    $this->recordExecutionEvent(ExecutionEvents::EVENT_FALLBACK_FAILURE);
                     throw new RuntimeException(
                         $message . ' and failed retrieving fallback',
                         get_class($this),
@@ -376,7 +380,7 @@ abstract class AbstractCommand
         } catch (Exception $exception) {
             // count that we are throwing an exception and re-throw it
             $metrics->markExceptionThrown();
-            $this->recordExecutionEvent(self::EVENT_EXCEPTION_THROWN);
+            $this->recordExecutionEvent(ExecutionEvents::EVENT_EXCEPTION_THROWN);
             throw $exception;
         }
     }
@@ -414,7 +418,7 @@ abstract class AbstractCommand
      */
     public function getExecutionEvents()
     {
-        return $this->executionEvents;
+        return $this->executionEvents->getExecutionEvents();
     }
 
     /**

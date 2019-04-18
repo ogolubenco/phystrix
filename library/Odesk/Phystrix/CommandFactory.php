@@ -59,6 +59,11 @@ class CommandFactory
     protected $requestLog;
 
     /**
+     * @var ExecutionEvents
+     */
+    protected $executionEvents;
+
+    /**
      * Constructor
      *
      * @param Config $config
@@ -74,7 +79,8 @@ class CommandFactory
         CircuitBreakerFactory $circuitBreakerFactory,
         CommandMetricsFactory $commandMetricsFactory,
         RequestCache $requestCache = null,
-        RequestLog $requestLog = null
+        RequestLog $requestLog = null,
+        ExecutionEvents $executionEvents
     ) {
         $this->serviceLocator = $serviceLocator;
         $this->config = $config;
@@ -82,6 +88,7 @@ class CommandFactory
         $this->commandMetricsFactory = $commandMetricsFactory;
         $this->requestCache = $requestCache;
         $this->requestLog = $requestLog;
+        $this->executionEvents = $executionEvents;
     }
 
     /**
@@ -104,6 +111,7 @@ class CommandFactory
         $command->setCircuitBreakerFactory($this->circuitBreakerFactory);
         $command->setCommandMetricsFactory($this->commandMetricsFactory);
         $command->setServiceLocator($this->serviceLocator);
+        $command->setExecutionEvents($this->executionEvents);
         $command->initializeConfig($this->config);
 
         if ($this->requestCache) {
